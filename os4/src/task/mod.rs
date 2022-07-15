@@ -16,9 +16,10 @@ mod task;
 
 use crate::config;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm;
 use crate::sync::UPSafeCell;
-use crate::trap::TrapContext;
 use crate::timer;
+use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 pub use switch::__switch;
@@ -178,6 +179,47 @@ impl TaskManager {
         let current = inner.current_task;
         return timer::get_time() - inner.tasks[current].start_time;
     }
+
+    /// mmap
+    fn mmap(&self, start: usize, len: usize, port: usize) -> isize {
+        if (start % config::PAGE_SIZE != 0) || (port & !0x7 != 0) || (port & 0x7 == 0) {
+            return -1;
+        }
+
+        let start_address = mm::VirtAddr(start);
+        let end_address = mm::VirtAddr(start + len);
+
+        let map_permission =
+            mm::MapPermission::from_bits((port as u8) << 1).unwrap() | mm::MapPermission::U;
+
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
+            if let Some(_) = inner.tasks[current].memory_set.translate(vpn) {
+                return -1;
+            };
+        }
+
+        inner.tasks[current].memory_set.insert_framed_area(
+            start_address,
+            end_address,
+            map_permission,
+        );
+
+        for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
+            if let None = inner.tasks[current].memory_set.translate(vpn) {
+                return -1;
+            };
+        }
+
+        return 0;
+    }
+
+    /// munmap
+    fn munmap(&self, start: usize, len: usize) -> isize {
+        -1
+    }
 }
 
 /// Run the first task in task list.
@@ -236,4 +278,14 @@ pub fn get_syscall_times() -> [u32; 500] {
 /// Update task's call times
 pub fn update_syscall_times(id: usize) {
     TASK_MANAGER.update_syscall_times(id);
+}
+
+/// CH4: mmap
+pub fn mmap(start: usize, len: usize, port: usize) -> isize {
+    TASK_MANAGER.mmap(start, len, port)
+}
+
+/// CH4: munmap
+pub fn munmap(start: usize, len: usize) -> isize {
+    TASK_MANAGER.munmap(start, len)
 }
