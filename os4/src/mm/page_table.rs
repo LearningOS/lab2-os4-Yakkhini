@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, PhysAddr, address};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -154,4 +154,33 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+
+///translate a generic through page table and return a mutable reference
+pub fn get_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
+    let page_table = PageTable::from_token(token);
+    let virtual_address = address::VirtAddr::from(ptr as usize);
+    let offset = virtual_address.page_offset();
+
+    let virtual_page_number = virtual_address.floor();
+
+    let physical_page_entry = page_table.find_pte(virtual_page_number).unwrap();
+
+    let physical_page_num = physical_page_entry.ppn();
+
+    let start_address = PhysAddr::from(physical_page_num);
+
+    let physical_address = PhysAddr::from(usize::from(start_address) + offset);
+
+    /*
+    println!("[debug] Physical address parsed.");
+
+    let x = usize::from(physical_address);
+    let y = usize::from(virtual_address);
+
+    println!("[debug] {}, {}, {}", x, y);
+    */
+
+    physical_address.get_mut()
 }
