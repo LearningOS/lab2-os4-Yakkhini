@@ -70,6 +70,24 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    -1
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
+    let syscall_times_vector = task::get_syscall_times();
+
+    let mut syscall_times = [0; MAX_SYSCALL_NUM];
+
+    let mut i = 0;
+    for item in syscall_times_vector.iter() {
+        syscall_times[i] = *item;
+        i = i + 1;
+    }
+
+    let ti_phy_ptr = mm::get_refmut(task::current_user_token(), ti);
+
+    *ti_phy_ptr = TaskInfo {
+        status: task::TaskStatus::Running,
+        syscall_times,
+        time: task::get_current_task_time(),
+    };
+
+    0
 }

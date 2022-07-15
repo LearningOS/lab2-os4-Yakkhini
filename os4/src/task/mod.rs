@@ -14,9 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use crate::timer;
 use alloc::vec::Vec;
 use lazy_static::*;
 pub use switch::__switch;
@@ -80,7 +82,7 @@ impl TaskManager {
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
 
-        // next_task.start_time = timer::get_time_us();
+        next_task.start_time = timer::get_time_us();
 
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
@@ -139,9 +141,9 @@ impl TaskManager {
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
 
-            // if inner.tasks[next].start_time == 0 {
-            //     inner.tasks[next].start_time = timer::get_time_us();
-            // }
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = timer::get_time_us();
+            }
 
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -154,6 +156,27 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    /// Update syscall_times of specific application
+    fn update_syscall_times(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id] += 1;
+    }
+
+    /// Get syscall_times
+    fn get_syscall_times(&self) -> [u32; 500] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times
+    }
+
+    /// Get current task's start time
+    fn get_start_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        return timer::get_time() - inner.tasks[current].start_time;
     }
 }
 
@@ -198,4 +221,19 @@ pub fn current_user_token() -> usize {
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+/// Get current task's time
+pub fn get_current_task_time() -> usize {
+    TASK_MANAGER.get_start_time() / (config::CLOCK_FREQ / timer::MICRO_PER_SEC) / 1000
+}
+
+/// Get all task's call times
+pub fn get_syscall_times() -> [u32; 500] {
+    TASK_MANAGER.get_syscall_times()
+}
+
+/// Update task's call times
+pub fn update_syscall_times(id: usize) {
+    TASK_MANAGER.update_syscall_times(id);
 }
