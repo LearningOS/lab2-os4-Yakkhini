@@ -196,9 +196,14 @@ impl TaskManager {
         let current = inner.current_task;
 
         for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
-            if let Some(_) = inner.tasks[current].memory_set.translate(vpn) {
-                return -1;
+            if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
+                if pte.is_valid() {
+                    println!("[debug] This area is used!");
+                    return -1;
+                }
             };
+
+            println!("[debug] {}", usize::from(vpn));
         }
 
         inner.tasks[current].memory_set.insert_framed_area(
@@ -218,7 +223,42 @@ impl TaskManager {
 
     /// munmap
     fn munmap(&self, start: usize, len: usize) -> isize {
-        -1
+        if start % config::PAGE_SIZE != 0 {
+            return -1;
+        }
+
+        let start_address = mm::VirtAddr(start);
+        let end_address = mm::VirtAddr(start + len);
+
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
+            if let None = inner.tasks[current].memory_set.translate(vpn) {
+                return -1;
+            };
+
+            if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
+                if pte.is_valid() == false {
+                    return -1;
+                }
+            };
+        }
+
+        for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
+            inner.tasks[current].memory_set.munmap(vpn);
+        }
+
+        for vpn in mm::VPNRange::new(mm::VirtPageNum::from(start_address), end_address.ceil()) {
+            if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
+                if pte.is_valid() {
+                    println!("[debug] This area is used!");
+                    return -1;
+                }
+            };
+        }
+
+        return 0;
     }
 }
 

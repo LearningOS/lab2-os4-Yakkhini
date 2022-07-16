@@ -66,6 +66,11 @@ impl MemorySet {
         }
         self.areas.push(map_area);
     }
+
+    pub fn munmap(&mut self, vpn: VirtPageNum) {
+        self.areas[0].unmap_one(&mut self.page_table, vpn);
+    }
+
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
         self.page_table.map(
